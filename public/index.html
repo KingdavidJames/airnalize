@@ -23,7 +23,7 @@
         <nav class="navbar">
             <div class="container bd-bottom pb-4">
                 <a href="index.html" class="navbar-brand logo">AIRNALIZE</a>
-                <button type="button" class="btn btn-connect fs-12 px-3">Connect Wallet</button>
+                <button type="button" class="btn btn-connect fs-12 px-3" id="connectWallet">Connect Wallet</button>
             </div>
         </nav>
     </header>
@@ -37,7 +37,7 @@
                         <div class="d-flex align-items-end justify-content-between mt-4">
                             <div><img src="./images/coin-stack.png" class="w-75 w-sm55" alt=""></div>
                             <div>
-                                <p class="text-white fs-2 mb-0 fw-medium">300</p>
+                                <p class="text-white fs-2 mb-0 fw-medium" id="netWalletBalance">300</p>
                             </div>
                         </div>
                     </div>
@@ -50,13 +50,13 @@
                             <div class="w-100">
                                 <div class="d-flex justify-content-around align-items-center" id="jcb">
                                     <div class="smp">
-                                        <p class="text-white fs-5 mb-0 fw-medium">AST - 30000</p>
+                                        <p class="text-white fs-5 mb-0 fw-medium">AST - <span id="tbAst">30000</span></p>
                                     </div>
                                     <div class="smp">
-                                        <p class="text-white fs-5 mb-0 fw-medium">HBR - 30000</p>
+                                        <p class="text-white fs-5 mb-0 fw-medium">HBR - <span id="tbHbr">30000</span></p>
                                     </div>
                                     <div class="smp">
-                                        <p class="text-white fs-5 mb-0 fw-medium">USDC - 30000</p>
+                                        <p class="text-white fs-5 mb-0 fw-medium">USDC - <span id="tbUsdc">30000</span></p>
                                     </div>
                                 </div>
                             </div>
@@ -98,11 +98,11 @@
                     <div class="bg-light0 rounded-4 p-4">
                         <p class="sora-font fs-4 fw-medium mt-2">Top Beneficiaries</p>
                         <div class="bene-data">
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-beneficiaries">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-beneficiaries">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-beneficiaries">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-beneficiaries">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-beneficiaries">0xbB7......79uye64</p>
                         </div>
                     </div>
                 </div>
@@ -110,11 +110,11 @@
                     <div class="bg-light0 rounded-4 p-4">
                         <p class="sora-font fs-4 fw-medium mt-2">Top Benefactors</p>
                         <div class="bene-data">
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
-                            <p class="fs-6 ms-4 fw-medium">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-benefactors">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-benefactors">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-benefactors">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-benefactors">0xbB7......79uye64</p>
+                            <p class="fs-6 ms-4 fw-medium top-benefactors">0xbB7......79uye64</p>
                         </div>
                     </div>
                 </div>
@@ -133,7 +133,7 @@
                                 <div class="d-flex align-items-end justify-content-between mt-5">
                                     <div><img src="./images/coin-up.png" class="w-100" alt=""></div>
                                     <div>
-                                        <p class="text-white fs-2 mb-0 fw-medium">300000</p>
+                                        <p class="text-white fs-2 mb-0 fw-medium"><span id="ttcAmb">30000</span></p>
                                     </div>
                                 </div>
                             </div>
@@ -144,7 +144,7 @@
                                 <div class="d-flex align-items-end justify-content-between mt-5">
                                     <div><img src="./images/coin-down.png" class="w-100" alt=""></div>
                                     <div>
-                                        <p class="text-white fs-2 mb-0 fw-medium">300000</p>
+                                        <p class="text-white fs-2 mb-0 fw-medium"><span id="ttdAmb">30000</span></p>
                                     </div>
                                 </div>
                             </div>
@@ -157,7 +157,7 @@
                                 <div class="d-flex align-items-end justify-content-between mt-5">
                                     <div><img src="./images/coin-up.png" class="w-100" alt=""></div>
                                     <div>
-                                        <p class="text-white fs-2 mb-0 fw-medium">60</p>
+                                        <p class="text-white fs-2 mb-0 fw-medium"><span id="tcc">60</span></p>
                                     </div>
                                 </div>
                             </div>
@@ -168,7 +168,7 @@
                                 <div class="d-flex align-items-end justify-content-between mt-5">
                                     <div><img src="./images/coin-down.png" class="w-100" alt=""></div>
                                     <div>
-                                        <p class="text-white fs-2 mb-0 fw-medium">87</p>
+                                        <p class="text-white fs-2 mb-0 fw-medium"><span id="tcd">87</span></p>
                                     </div>
                                 </div>
                             </div>
@@ -181,7 +181,7 @@
                                 <div class="d-flex align-items-end justify-content-between mt-5">
                                     <div><img src="./images/coin-up.png" class="w-100" alt=""></div>
                                     <div>
-                                        <p class="text-white fs-2 mb-0 fw-medium">AST - 50</p>
+                                        <p class="text-white fs-2 mb-0 fw-medium">AST - <span id="mttCredit">100</span></p>
                                     </div>
                                 </div>
                             </div>
@@ -192,7 +192,7 @@
                                 <div class="d-flex align-items-end justify-content-between mt-5">
                                     <div><img src="./images/coin-down.png" class="w-100" alt=""></div>
                                     <div>
-                                        <p class="text-white fs-2 mb-0 fw-medium">87</p>
+                                        <p class="text-white fs-2 mb-0 fw-medium"><span id="mttDebit">55</span></p>
                                     </div>
                                 </div>
                             </div>
