@@ -1,5 +1,78 @@
-*{
+* {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+body {
+    font-family: "Inter", serif !important;
+    background-color: #D6E8FF;
+}
+.sora-font{
+    font-family: "Sora", serif;
+}
+
+.fs-12 {
+    font-size: 12px;
+}
+
+.btn-connect {
+    background-color: #031835;
+    color: white;
+}
+
+.btn-connect:hover {
+    background-color: #1a2b3cd5;
+    color: white;
+}
+
+.logo {
+    background: linear-gradient(90deg, #011B3E 0%, #E37400 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+    font-weight: 600;
+    font-size: 28px;
+}
+
+.bd-bottom {
+    border-bottom: 1.5px solid #000;
+}
+.card-cont{
+    background-color: #031835;
+    border-radius: 14px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    padding: 15px 25px;
+}
+.bg-light0{
+    background-color: #E3EFFF;
+}
+.pie{
+    height: 408px;
+}
+#idChartPie, #idChartPieSecond{
+  margin: 50px auto;
+}
+td.gridjs-td{
+    border: none;
+    padding: 20px 24px;
+}
+.gridjs-tbody, td.gridjs-td {
+    background-color: #E3EFFF;
+}
+.gridjs-wrapper{
+    box-shadow: none;
+}
+.gridjs-footer{
+    background-color: transparent;
+    box-shadow: none;
+}
+.part-5{
+    margin-bottom: 100px;
+}
+th.gridjs-th .gridjs-th-content{
+    overflow: visible;
+}
+th.gridjs-th{
+    padding: 20px 24px;
 }

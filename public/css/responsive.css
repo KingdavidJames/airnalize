@@ -1,0 +1,58 @@
+/* MEDIA QUERIES */
+@media screen and (max-width: 768px) {
+    .logo {
+        font-size: 24px;
+    }
+
+    .fs-12 {
+        font-size: 10px;
+    }
+
+    .pie {
+        height: 300px !important;
+    }
+
+    .part-5 {
+        margin-bottom: 50px;
+    }
+
+    .smp p {
+        font-size: 12px !important;
+    }
+
+    #jcb {
+        justify-content: space-between;
+    }
+
+    .w-sm55 {
+        width: 55% !important;
+    }
+
+    .w-sm70 {
+        width: 70% !important;
+    }
+
+    #idChartPie,
+    #idChartPieSecond {
+        margin: 30px auto !important;
+    }
+
+    .apexcharts-canvas {
+        margin: 0px auto;
+    }
+
+    .th.gridjs-th {
+        padding: 10px 15px !important;
+    }
+
+    td.gridjs-td {
+        padding: 10px 15px !important;
+    }
+
+    .gridjs-pagination {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+}
