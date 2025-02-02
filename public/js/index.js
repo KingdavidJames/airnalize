@@ -1,191 +1,164 @@
 import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.min.js";
 
-let walletAddress = null; // To store the connected wallet address
-let chartInstance = null; // To store the ApexCharts instance
+let walletAddress = null;
+let chartInstance = null;
 
-const TOKEN_ADDRESSES = {
-    AMB: "0xf4fb9bf10e489ea3edb03e094939341399587b0c", 
-    ASTRA: "0x5cecbde7811ac0ed86be11827ae622b89bc429df",
-    HBR: "0xd09270e917024e75086e27854740871f1c8e0e10", 
-    USDC: "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de",
+// Configure token types
+const TOKEN_CONFIG = {
+    AMB: { type: 'native' },
+    ASTRA: { 
+        type: 'erc20',
+        address: "0x5cecbde7811ac0ed86be11827ae622b89bc429df"
+    },
+    HBR: {
+        type: 'erc20',
+        address: "0xd09270e917024e75086e27854740871f1c8e0e10"
+    },
+    USDC: {
+        type: 'erc20',
+        address: "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de"
+    }
 };
 
-// ABI for ERC-20 tokens
 const ERC20_ABI = [
     "function balanceOf(address owner) view returns (uint256)",
-    "function decimals() view returns (uint8)", // Optional: Fetch decimals if needed
+    "function decimals() view returns (uint8)"
 ];
 
+// balance formatter
 function truncateStringToTwoDecimals(str) {
-    let num = parseFloat(str); // Convert string to number
-    return (Math.floor(num * 100) / 100).toFixed(2);
+    return Number(str).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
 }
 
-async function fetchTokenBalance(tokenAddress, walletAddress) {
+const provider = new ethers.JsonRpcProvider('https://network.ambrosus.io/');
+
+async function fetchTokenBalance(tokenKey) {
     try {
-        const provider = new ethers.JsonRpcProvider('https://network.ambrosus.io/');
-        const contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
-
-        // Fetch balance
-        const balance = await contract.balanceOf(walletAddress);
-
-        // Fetch decimals (if needed)
-        const decimals = await contract.decimals().catch(() => 18); // Default to 18 if decimals() is not available
-        return ethers.formatUnits(balance, decimals);
+        const config = TOKEN_CONFIG[tokenKey];
+        
+        if (config.type === 'native') {
+            // Fetch native AMB balance
+            const balance = await provider.getBalance(walletAddress);
+            return ethers.formatEther(balance);
+        } else {
+            // Fetch ERC-20 token balance
+            const contract = new ethers.Contract(config.address, ERC20_ABI, provider);
+            const [balance, decimals] = await Promise.all([
+                contract.balanceOf(walletAddress),
+                contract.decimals().catch(() => 18)
+            ]);
+            return ethers.formatUnits(balance, decimals);
+        }
     } catch (error) {
-        console.error("Error fetching token balance for address:", tokenAddress, error);
-        return "0"; // Return 0 if there's an error
+        console.error(`Error fetching ${tokenKey} balance:`, error);
+        return "0";
     }
 }
 
-async function fetchTransactionCount(walletAddress) {
-    const provider = new ethers.JsonRpcProvider('https://network.ambrosus.io/');
-    const txCount = await provider.getTransactionCount(walletAddress);
-    console.log("Transaction Count:", txCount);
+async function fetchAllBalances() {
+    const balancePromises = Object.keys(TOKEN_CONFIG).map(token => 
+        fetchTokenBalance(token)
+    );
+    const balances = await Promise.all(balancePromises);
+    
+    return {
+        amb: balances[0],
+        ast: balances[1],
+        hbr: balances[2],
+        usdc: balances[3]
+    };
 }
-
-function chartPie() {
-    // Get token balances from the DOM
-    const netWalletBalance = parseFloat(document.getElementById("netWalletBalance").textContent) || 0;
-    const tbAst = parseFloat(document.getElementById("tbAst").textContent) || 0;
-    const tbHbr = parseFloat(document.getElementById("tbHbr").textContent) || 0;
-    const tbUsdc = parseFloat(document.getElementById("tbUsdc").textContent) || 0;
-
-    // Pie chart options
-    var options = {
-        series: [netWalletBalance, tbAst, tbHbr, tbUsdc],
-        chart: {
-            width: 380,
-            type: 'pie',
-        },
+//Chart handling with destroy/recreate pattern
+function updatePieChart(balances) {
+    const options = {
+        series: [balances.amb, balances.ast, balances.hbr, balances.usdc].map(Number),
+        chart: { type: 'pie', width: 380 },
         labels: ['$AMB', '$AST', '$HBR', '$USDC'],
         responsive: [{
             breakpoint: 480,
-            options: {
-                chart: {
-                    width: 200
-                },
-                legend: {
-                    position: 'bottom'
-                }
-            }
+            options: { chart: { width: 200 } }
         }]
     };
 
-    // If a chart instance already exists, update it
     if (chartInstance) {
-        chartInstance.updateSeries([netWalletBalance, tbAst, tbHbr, tbUsdc]);
-    } else {
-        // Otherwise, create a new chart instance
-        chartInstance = new ApexCharts(document.querySelector("#idChartPie"), options);
-        chartInstance.render();
+        chartInstance.destroy();
     }
+    chartInstance = new ApexCharts(document.querySelector("#idChartPie"), options);
+    chartInstance.render();
 }
 
-async function connectWallet() {
+//connection handler
+async function handleWalletConnection() {
     const connectButton = document.getElementById('connectWallet');
     const walletDisplay = document.getElementById('walletDisplay');
 
-    if (window.ethereum) {
+    if (!walletAddress) {
+        if (!window.ethereum) return alert("Install MetaMask!");
+        
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
-            const accounts = await provider.send("eth_requestAccounts", []);
-            walletAddress = accounts[0];
-            console.log("Connected:", walletAddress);
- 
-            // Save wallet address to localStorage
-            localStorage.setItem('walletAddressM', walletAddress);
-
-            walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"; // trying with funded wallet, remove when done
-            console.log("testAddr:", walletAddress);
+            [walletAddress] = await provider.send("eth_requestAccounts", []);
             
-            // Display sliced wallet address
-            const slicedAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
-            walletDisplay.textContent = slicedAddress;
-
-            // Change button text to "Disconnect"
+            // Persist connection
+            localStorage.setItem('walletAddress', walletAddress);
+            walletDisplay.textContent = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
             connectButton.textContent = "Disconnect";
 
-            // Fetch and display token balances
-            await updateTokenBalances();
-
-            // Fetch transaction count
-            await fetchTransactionCount(walletAddress);
-
-            // Fetch transaction data
-            const transactions = await fetchTransactions(walletAddress);
-
-            // Update charts and table
-            updateCharts(transactions);
-            updateTable(transactions);
+            walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"
+            // Initial data load
+            const balances = await fetchAllBalances();
+            updateUI(balances);
+            
         } catch (error) {
-            console.error("Error connecting wallet:", error);
+            console.error("Connection error:", error);
+            walletAddress = null;
         }
     } else {
-        alert("Please install MetaMask!");
+        // Disconnect logic
+        walletAddress = null;
+        localStorage.removeItem('walletAddress');
+        connectButton.textContent = "Connect Wallet";
+        walletDisplay.textContent = "";
+        if (chartInstance) chartInstance.destroy();
     }
 }
 
-async function updateTokenBalances() {
-    if (walletAddress) {
-        const ambBalance = await fetchTokenBalance(TOKEN_ADDRESSES.AMB, walletAddress);
-        const astraBalance = await fetchTokenBalance(TOKEN_ADDRESSES.ASTRA, walletAddress);
-        const hbrBalance = await fetchTokenBalance(TOKEN_ADDRESSES.HBR, walletAddress);
-        const usdcBalance = await fetchTokenBalance(TOKEN_ADDRESSES.USDC, walletAddress);
-
-        // Update DOM with truncated balances
-        document.getElementById('netWalletBalance').textContent = truncateStringToTwoDecimals(ambBalance);
-        document.getElementById('tbAst').textContent = truncateStringToTwoDecimals(astraBalance);
-        document.getElementById('tbHbr').textContent = truncateStringToTwoDecimals(hbrBalance);
-        document.getElementById('tbUsdc').textContent = truncateStringToTwoDecimals(usdcBalance);
-
-        // Update the pie chart
-        chartPie();
-    }
+// 6. Central UI updater
+function updateUI(balances) {
+    document.getElementById('netWalletBalance').textContent = truncateStringToTwoDecimals(balances.amb);
+    document.getElementById('tbAst').textContent = truncateStringToTwoDecimals(balances.ast);
+    document.getElementById('tbHbr').textContent = truncateStringToTwoDecimals(balances.hbr);
+    document.getElementById('tbUsdc').textContent = truncateStringToTwoDecimals(balances.usdc);
+    updatePieChart(balances);
 }
 
-// Poll every 10 seconds (adjust as needed)
-setInterval(updateTokenBalances, 10000);
+// 7. Optimized polling with cleanup
+let balancePoll;
+document.getElementById('connectWallet').addEventListener('click', handleWalletConnection);
 
-document.getElementById('connectWallet').addEventListener('click', async () => {
-    if (!walletAddress) {
-        await connectWallet();
-    } else {
-        // Disconnect Wallet
-        walletAddress = null; // Reset wallet address
-        localStorage.removeItem('walletAddress'); // Remove saved wallet address
-        document.getElementById('walletDisplay').textContent = ""; // Clear displayed address
-        document.getElementById('connectWallet').textContent = "Connect Wallet"; // Reset button text
-        console.log("Wallet disconnected.");
-    }
-});
-
-// Restore wallet connection on page load
 window.addEventListener('load', async () => {
-    const savedWalletAddress = localStorage.getItem('walletAddress');
-    if (savedWalletAddress) {
-        walletAddress = savedWalletAddress;
-        await connectWallet(); // Reconnect the wallet
+    const savedAddress = localStorage.getItem('walletAddress');
+    if (savedAddress) {
+        walletAddress = savedAddress;
+        const balances = await fetchAllBalances();
+        updateUI(balances);
+        document.getElementById('walletDisplay').textContent = 
+            `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+        document.getElementById('connectWallet').textContent = "Disconnect";
+        
+        // Start polling
+        balancePoll = setInterval(async () => {
+            const balances = await fetchAllBalances();
+            updateUI(balances);
+        }, 10000);
     }
 });
 
-async function fetchTransactions(walletAddress) {
-    // Fetch data from Ambrosus API
-    const response = await fetch(`https://api.ambrosus.com/transactions?address=${walletAddress}`);
-    const data = await response.json();
-    return data;
-}
-
-function updateCharts(transactions) {
-    // Update pie and line charts with real data
-    const pieData = [/* Process transactions for pie chart */];
-    const lineData = [/* Process transactions for line chart */];
-    updatePieChart(pieData);
-    updateLineChart(lineData);
-}
-
-function updateTable(transactions) {
-    // Update GridJS table with real data
-    const tableData = transactions.map(tx => [tx.block, tx.hash, tx.from, tx.to, tx.amount, tx.date]);
-    grid.updateConfig({ data: tableData }).forceRender();
-}
+// Cleanup on unload
+window.addEventListener('beforeunload', () => {
+    clearInterval(balancePoll);
+    if (chartInstance) chartInstance.destroy();
+});
