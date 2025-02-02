@@ -1,13 +1,13 @@
 import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.min.js";
 
 let walletAddress = null; // To store the connected wallet address
+let chartInstance = null; // To store the ApexCharts instance
 
-// Token contract addresses (replace with actual addresses for AMB, ASTRA, HBR, USDC)
 const TOKEN_ADDRESSES = {
-    AMB: "0x2834c436d04ed155e736f994c1f3a0d05c4a8de4", // Replace with actual AMB contract address
-    ASTRA: "0x5cecbde7811ac0ed86be11827ae622b89bc429df", // Replace with actual ASTRA contract address
-    HBR: "0xd09270e917024e75086e27854740871f1c8e0e10", // Replace with actual HBR contract address
-    USDC: "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de", // Replace with actual USDC contract address
+    AMB: "0xf4fb9bf10e489ea3edb03e094939341399587b0c", 
+    ASTRA: "0x5cecbde7811ac0ed86be11827ae622b89bc429df",
+    HBR: "0xd09270e917024e75086e27854740871f1c8e0e10", 
+    USDC: "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de",
 };
 
 // ABI for ERC-20 tokens
@@ -72,67 +72,100 @@ function chartPie() {
         }]
     };
 
-    // Render the pie chart
-    var chart = new ApexCharts(document.querySelector("#idChartPie"), options);
-    chart.render();
+    // If a chart instance already exists, update it
+    if (chartInstance) {
+        chartInstance.updateSeries([netWalletBalance, tbAst, tbHbr, tbUsdc]);
+    } else {
+        // Otherwise, create a new chart instance
+        chartInstance = new ApexCharts(document.querySelector("#idChartPie"), options);
+        chartInstance.render();
+    }
 }
 
-document.getElementById('connectWallet').addEventListener('click', async () => {
+async function connectWallet() {
     const connectButton = document.getElementById('connectWallet');
     const walletDisplay = document.getElementById('walletDisplay');
 
-    if (!walletAddress) {
-        // Connect Wallet
-        if (window.ethereum) {
-            try {
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                const accounts = await provider.send("eth_requestAccounts", []);
-                walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105";
-                console.log("Connected:", walletAddress);
+    if (window.ethereum) {
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const accounts = await provider.send("eth_requestAccounts", []);
+            walletAddress = accounts[0];
+            console.log("Connected:", walletAddress);
+ 
+            // Save wallet address to localStorage
+            localStorage.setItem('walletAddressM', walletAddress);
 
-                // Display sliced wallet address
-                const slicedAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
-                walletDisplay.textContent = slicedAddress;
+            walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"; // trying with funded wallet, remove when done
+            console.log("testAddr:", walletAddress);
+            
+            // Display sliced wallet address
+            const slicedAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+            walletDisplay.textContent = slicedAddress;
 
-                // Change button text to "Disconnect"
-                connectButton.textContent = "Disconnect";
+            // Change button text to "Disconnect"
+            connectButton.textContent = "Disconnect";
 
-                // Fetch and display token balances
-                const ambBalance = await fetchTokenBalance(TOKEN_ADDRESSES.AMB, walletAddress);
-                const astraBalance = await fetchTokenBalance(TOKEN_ADDRESSES.ASTRA, walletAddress);
-                const hbrBalance = await fetchTokenBalance(TOKEN_ADDRESSES.HBR, walletAddress);
-                const usdcBalance = await fetchTokenBalance(TOKEN_ADDRESSES.USDC, walletAddress);
+            // Fetch and display token balances
+            await updateTokenBalances();
 
-                // Update DOM with truncated balances
-                document.getElementById('netWalletBalance').textContent = truncateStringToTwoDecimals(ambBalance);
-                document.getElementById('tbAst').textContent = truncateStringToTwoDecimals(astraBalance);
-                document.getElementById('tbHbr').textContent = truncateStringToTwoDecimals(hbrBalance);
-                document.getElementById('tbUsdc').textContent = truncateStringToTwoDecimals(usdcBalance);
+            // Fetch transaction count
+            await fetchTransactionCount(walletAddress);
 
-                // Render the pie chart
-                chartPie();
+            // Fetch transaction data
+            const transactions = await fetchTransactions(walletAddress);
 
-                // Fetch transaction count
-                await fetchTransactionCount(walletAddress);
-
-                // Fetch transaction data
-                const transactions = await fetchTransactions(walletAddress);
-
-                // Update charts and table
-                updateCharts(transactions);
-                updateTable(transactions);
-            } catch (error) {
-                console.error("Error connecting wallet:", error);
-            }
-        } else {
-            alert("Please install MetaMask!");
+            // Update charts and table
+            updateCharts(transactions);
+            updateTable(transactions);
+        } catch (error) {
+            console.error("Error connecting wallet:", error);
         }
+    } else {
+        alert("Please install MetaMask!");
+    }
+}
+
+async function updateTokenBalances() {
+    if (walletAddress) {
+        const ambBalance = await fetchTokenBalance(TOKEN_ADDRESSES.AMB, walletAddress);
+        const astraBalance = await fetchTokenBalance(TOKEN_ADDRESSES.ASTRA, walletAddress);
+        const hbrBalance = await fetchTokenBalance(TOKEN_ADDRESSES.HBR, walletAddress);
+        const usdcBalance = await fetchTokenBalance(TOKEN_ADDRESSES.USDC, walletAddress);
+
+        // Update DOM with truncated balances
+        document.getElementById('netWalletBalance').textContent = truncateStringToTwoDecimals(ambBalance);
+        document.getElementById('tbAst').textContent = truncateStringToTwoDecimals(astraBalance);
+        document.getElementById('tbHbr').textContent = truncateStringToTwoDecimals(hbrBalance);
+        document.getElementById('tbUsdc').textContent = truncateStringToTwoDecimals(usdcBalance);
+
+        // Update the pie chart
+        chartPie();
+    }
+}
+
+// Poll every 10 seconds (adjust as needed)
+setInterval(updateTokenBalances, 10000);
+
+document.getElementById('connectWallet').addEventListener('click', async () => {
+    if (!walletAddress) {
+        await connectWallet();
     } else {
         // Disconnect Wallet
         walletAddress = null; // Reset wallet address
-        walletDisplay.textContent = ""; // Clear displayed address
-        connectButton.textContent = "Connect Wallet"; // Reset button text
+        localStorage.removeItem('walletAddress'); // Remove saved wallet address
+        document.getElementById('walletDisplay').textContent = ""; // Clear displayed address
+        document.getElementById('connectWallet').textContent = "Connect Wallet"; // Reset button text
         console.log("Wallet disconnected.");
+    }
+});
+
+// Restore wallet connection on page load
+window.addEventListener('load', async () => {
+    const savedWalletAddress = localStorage.getItem('walletAddress');
+    if (savedWalletAddress) {
+        walletAddress = savedWalletAddress;
+        await connectWallet(); // Reconnect the wallet
     }
 });
 
