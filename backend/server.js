@@ -1,0 +1,51 @@
+// server.js
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors'); // Enable CORS for frontend access
+const app = express();
+const PORT = 3000;
+
+// Middleware
+app.use(cors()); // Allow requests from your frontend
+app.use(express.json()); // Parse JSON requests
+
+// Endpoint to fetch token prices from CoinGecko
+app.get('/api/prices', async (req, res) => {
+    try {
+        // CoinGecko API URL
+        const apiUrl = 'https://api.coingecko.com/api/v3/simple/price';
+        const tokenIds = 'ambrosus,astra,hbr,usd-coin'; // Token IDs
+        const vsCurrencies = 'usd'; // Currency
+        const apiKey = 'CG-aUU3nwamSNv3izAsd1MkG5tD'; // Your CoinGecko API key
+
+        // Make the request to CoinGecko
+        const response = await axios.get(apiUrl, {
+            params: {
+                ids: tokenIds,
+                vs_currencies: vsCurrencies,
+                x_cg_pro_api_key: apiKey
+            }
+        });
+
+        // Parse the data
+        const data = response.data;
+
+        // Send the parsed data back to the frontend
+        res.json({
+            success: true,
+            data: data
+        });
+    } catch (error) {
+        console.error('Error fetching data from CoinGecko:', error.message);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch data from CoinGecko',
+            error: error.message
+        });
+    }
+});
+
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
