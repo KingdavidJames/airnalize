@@ -1,6 +1,6 @@
 new gridjs.Grid({
     columns: [
-      "Blocks",
+      "S/N",
       { 
         name: "Hash",
         formatter: (cell) => gridjs.html(`<a href="https://explorer.airdao.io/tx/${cell}" style="font-weight:bold; text-decoration:underline; color:#000;">${cell}</a>`)

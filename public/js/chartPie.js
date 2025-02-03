@@ -1,4 +1,4 @@
-
+// walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"
 // export function chartPie() {
 //     const netWalletBalance = parseFloat(document.getElementById("netWalletBalance").textContent) || 0;
 //     const tbAst = parseFloat(document.getElementById("tbAst").textContent) || 0;
