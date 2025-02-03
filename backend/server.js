@@ -14,16 +14,16 @@ app.get('/api/prices', async (req, res) => {
     try {
         // CoinGecko API URL
         const apiUrl = 'https://api.coingecko.com/api/v3/simple/price';
-        const tokenIds = 'ambrosus,astra,hbr,usd-coin'; // Token IDs
+        const tokenIds = 'amber,astra-2,harbor-4,usd-coin'; // Token IDs
         const vsCurrencies = 'usd'; // Currency
-        const apiKey = 'CG-aUU3nwamSNv3izAsd1MkG5tD'; // Your CoinGecko API key
+        //const apiKey = 'CG-aUU3nwamSNv3izAsd1MkG5tD'; // Your CoinGecko API key
 
         // Make the request to CoinGecko
         const response = await axios.get(apiUrl, {
             params: {
                 ids: tokenIds,
-                vs_currencies: vsCurrencies,
-                x_cg_pro_api_key: apiKey
+                vs_currencies: vsCurrencies
+                //x_cg_pro_api_key: apiKey
             }
         });
 

@@ -14,17 +14,17 @@ let chartInstance = null;
 const TOKEN_CONFIG = {
     AMB: {
         type: 'native',
-        priceFeed: 'https://api.coingecko.com/api/v3/simple/price?ids=ambrosus&vs_currencies=usd'
+        priceFeed: 'https://api.coingecko.com/api/v3/simple/price?ids=amber&vs_currencies=usd'
     },
     ASTRA: {
         type: 'erc20',
         address: "0x5cecbde7811ac0ed86be11827ae622b89bc429df",
-        priceFeed: 'https://api.coingecko.com/api/v3/simple/price?ids=astra&vs_currencies=usd'
+        priceFeed: 'https://api.coingecko.com/api/v3/simple/price?ids=astra-2&vs_currencies=usd'
     },
     HBR: {
         type: 'erc20',
         address: "0xd09270e917024e75086e27854740871f1c8e0e10",
-        priceFeed: 'https://api.coingecko.com/api/v3/simple/price?ids=hbr&vs_currencies=usd'
+        priceFeed: 'https://api.coingecko.com/api/v3/simple/price?ids=harbor-4&vs_currencies=usd'
     },
     USDC: {
         type: 'erc20',
