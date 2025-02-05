@@ -1,38 +1,128 @@
-new gridjs.Grid({
+import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.min.js";
+
+// =========================
+// 1. FETCH TRANSACTIONS
+// =========================
+async function fetchTransactions(walletAddress) {
+  try {
+    // Call your backend, which queries Blockscout
+    const response = await fetch(`http://localhost:3000/api/transactions?address=${walletAddress}`);
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to fetch transactions');
+    }
+    
+    // The raw transaction array is in data.data.items
+    return data.data || [];
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    return [];
+  }
+}
+
+// =========================
+// 2. FORMAT HELPERS
+// =========================
+
+// Convert a big-number string in wei to a “human” AMB value
+function formatAMB(valueInWei) {
+  try {
+    // If valueInWei is "0" or empty, you’ll get "0.0" in many cases
+    return ethers.formatEther(valueInWei);
+  } catch {
+    return "0";
+  }
+}
+
+// Shorten an address/string to something like 0xabcd...1234
+function truncateHash(hash, front = 10, back = 6) {
+  if (!hash || hash.length < front + back) {
+    return hash;
+  }
+  return `${hash.slice(0, front)}...${hash.slice(-back)}`;
+}
+
+// Convert timestamp string (e.g. "2025-02-03T22:31:35.000000Z") to local date
+function formatDate(timestamp) {
+  return new Date(timestamp).toLocaleString(); // e.g. "2/3/2025, 10:31:35 PM"
+}
+
+// =========================
+// 3. INITIALIZE THE TABLE
+// =========================
+async function initializeTable(walletAddress) {
+  // Show loading state
+  const tableContainer = document.getElementById('tables');
+  tableContainer.innerHTML = '<p>Loading transactions...</p>';
+
+  // Fetch transactions from your backend
+  const transactions = await fetchTransactions(walletAddress);
+  if (!transactions || transactions.length === 0) {
+    tableContainer.innerHTML = '<p>No transactions found for this wallet.</p>';
+    return;
+  }
+
+  // Build the table data
+  const tableData = transactions.map((tx, index) => {
+    // from, to can be null or objects; handle carefully
+    const fromHash = tx.from?.hash || "N/A";
+    const toHash = tx.to?.hash || "Contract Creation";
+    
+    // Format the value (AMB)
+    // If it's an ERC20 transfer, tx.value might be "0"
+    // For actual coin transfers, tx.value in wei
+    const amountAMB = formatAMB(tx.value);
+
+    // Format the timestamp
+    const dateString = formatDate(tx.timestamp);
+
+    // Return the row data
+    return [
+      index + 1,  // S/N
+      tx.hash,    // Full hash (we’ll truncate it in the GridJS formatter)
+      fromHash,
+      toHash,
+      `${amountAMB} AMB`,
+      dateString,
+    ];
+  });
+
+  tableContainer.innerHTML = ''; // Clear loading text
+
+  // ===============================
+  // 4. Initialize GridJS
+  // ===============================
+  new gridjs.Grid({
     columns: [
       "S/N",
-      { 
+      {
         name: "Hash",
-        formatter: (cell) => gridjs.html(`<a href="https://explorer.airdao.io/tx/${cell}" style="font-weight:bold; text-decoration:underline; color:#000;">${cell}</a>`)
+        formatter: (cell) => gridjs.html(`
+          <a href="https://explorer.airdao.io/tx/${cell}"
+             title="${cell}"
+             style="font-weight:bold; text-decoration:underline; color:#000;">
+            ${truncateHash(cell, 10, 10)}
+          </a>
+        `),
       },
-      "From",
-      "To",
+      {
+        name: "From",
+        formatter: (cell) => gridjs.html(`
+          <span title="${cell}">${truncateHash(cell, 10, 10)}</span>
+        `),
+      },
+      {
+        name: "To",
+        formatter: (cell) => gridjs.html(`
+          <span title="${cell}">${truncateHash(cell, 10, 10)}</span>
+        `),
+      },
       "Amount",
-      "Date"
+      "Date",
     ],
     pagination: true,
-    data: [
-        ["65822", "0xa1b2c3...d4e5", "0xf6g7h8i9j0k1l2...m3n4", "0xf6g7h8i9j0k1l2...m3n4", "320 AMB", "12-03-2025"],
-        ["65931", "0xb7c8d9...e0f1", "0x1a2b3c4d5e6f7g...8h9i", "0x1a2b3c4d5e6f7g...8h9i", "890 AMB", "18-02-2025"],
-        ["66043", "0xe5f6g7...h8i9", "0x0a1b2c3d4e5f6g...7h8i", "0x0a1b2c3d4e5f6g...7h8i", "475 AMB", "25-02-2025"],
-        ["66211", "0x123456...7890", "0xaabbccddeeff00...1122", "0xaabbccddeeff00...1122", "642 AMB", "08-02-2025"],
-        ["66459", "0xabcdef...1234", "0x5566778899aabb...ccdd", "0x5566778899aabb...ccdd", "930 AMB", "15-03-2025"],
-        ["66612", "0x789abc...def0", "0x33445566778899...aabb", "0x33445566778899...aabb", "500 AMB", "01-03-2025"],
-        ["66734", "0x0f1e2d...3c4b", "0x9876543210fedc...ba98", "0x9876543210fedc...ba98", "150 AMB", "22-02-2025"],
-        ["66980", "0x654321...fedc", "0x11223344556677...8899", "0x11223344556677...8899", "810 AMB", "14-02-2025"],
-        ["67123", "0xfedcba...9876", "0xabc123def456ghi...789j", "0xabc123def456ghi...789j", "275 AMB", "27-02-2025"],
-        ["67345", "0xabcdef...6543", "0x987abcdef123456...7890", "0x987abcdef123456...7890", "420 AMB", "03-03-2025"],
-        ["67511", "0x123abc...456def", "0x111222333444555...6667", "0x111222333444555...6667", "675 AMB", "10-03-2025"],
-        ["67789", "0x456def...123abc", "0x888999aaa111222...3334", "0x888999aaa111222...3334", "340 AMB", "19-02-2025"],
-        ["67954", "0xabcdef...789123", "0x555666777888999...0001", "0x555666777888999...0001", "980 AMB", "28-02-2025"],
-        ["68112", "0x0a1b2c...3d4e", "0x9a8b7c6d5e4f3g...2h1i", "0x9a8b7c6d5e4f3g...2h1i", "123 AMB", "07-02-2025"],
-        ["68276", "0x123456...abcdef", "0xfedcba987654321...0fed", "0xfedcba987654321...0fed", "789 AMB", "21-02-2025"],
-        ["68400", "0xa1b2c3...d4e5", "0xf0e9d8c7b6a5f4...3210", "0xf0e9d8c7b6a5f4...3210", "600 AMB", "05-03-2025"],
-        ["68533", "0xb7c8d9...e0f1", "0x123abc456def789...0123", "0x123abc456def789...0123", "450 AMB", "16-02-2025"],
-        ["68745", "0xe5f6g7...h8i9", "0xaabbccddeeff00...1122", "0xaabbccddeeff00...1122", "275 AMB", "26-02-2025"],
-        ["68901", "0x123456...7890", "0x33445566778899...aabb", "0x33445566778899...aabb", "980 AMB", "02-03-2025"],
-        ["69028", "0xabcdef...1234", "0x111222333444555...6667", "0x111222333444555...6667", "330 AMB", "09-02-2025"]
-      ],      
+    data: tableData,
     style: {
       table: {
         border: "none"
@@ -40,7 +130,6 @@ new gridjs.Grid({
       th: {
         "background-color": "#031835",
         "text-align": "center",
-        // padding: "20px 24px",
         color: "#E3EFFF",
         border: "none"
       },
@@ -54,3 +143,97 @@ new gridjs.Grid({
     }
   }).render(document.getElementById("tables"));
   
+  // Also update the other sections (Top Beneficiaries, Top Benefactors, Income/Expenditure)
+  updateOtherSections(transactions, walletAddress);
+}
+
+// =========================
+// 5. UPDATE OTHER SECTIONS
+// =========================
+function updateOtherSections(transactions, walletAddress) {
+  // These objects will hold the aggregated sums
+  const beneficiariesMap = {};
+  const benefactorsMap = {};
+  let totalCredited = 0;
+  let totalDebited = 0;
+  let creditCount = 0;
+  let debitCount = 0;
+
+  transactions.forEach((tx) => {
+    const rawValueAMB = formatAMB(tx.value); 
+    const valueAMB = parseFloat(rawValueAMB);
+
+    // “Credit” if your wallet is the “to” => you received
+    if (tx.to?.hash && tx.to.hash.toLowerCase() === walletAddress.toLowerCase()) {
+      totalCredited += valueAMB;
+      creditCount++;
+      // The entity that sent you (tx.from) is effectively a “benefactor”
+      const fromHash = tx.from?.hash || "Unknown";
+      benefactorsMap[fromHash] = (benefactorsMap[fromHash] || 0) + valueAMB;
+    }
+    // “Debit” if your wallet is the “from” => you sent out
+    else if (tx.from?.hash && tx.from.hash.toLowerCase() === walletAddress.toLowerCase()) {
+      totalDebited += valueAMB;
+      debitCount++;
+      // The entity that you sent to (tx.to) is effectively a “beneficiary”
+      const toHash = tx.to?.hash || "ContractCreation";
+      beneficiariesMap[toHash] = (beneficiariesMap[toHash] || 0) + valueAMB;
+    }
+  });
+
+  // 5a. Update Income & Expenditure
+  document.getElementById('ttcAmb').textContent = totalCredited.toFixed(2);
+  document.getElementById('ttdAmb').textContent = totalDebited.toFixed(2);
+  document.getElementById('tcc').textContent = creditCount;
+  document.getElementById('tcd').textContent = debitCount;
+
+  // 5b. Sort & display Top Beneficiaries (addresses you sent to)
+  const topBeneficiaries = Object.entries(beneficiariesMap)
+    .sort((a, b) => b[1] - a[1]) // descending by total
+    .slice(0, 5);
+
+  // 5c. Sort & display Top Benefactors (addresses that sent to you)
+  const topBenefactors = Object.entries(benefactorsMap)
+    .sort((a, b) => b[1] - a[1]) // descending
+    .slice(0, 5);
+
+  // Update the DOM for top beneficiaries
+  const beneContainer = document.querySelector('.bene-data');
+  beneContainer.innerHTML = topBeneficiaries
+    .map(
+      ([address, amt]) =>
+        `<p class="fs-6 ms-4 fw-medium top-beneficiaries">
+           ${truncateHash(address, 6, 4)} - ${amt.toFixed(2)} AMB
+         </p>`
+    )
+    .join('');
+
+  // Update the DOM for top benefactors
+  const benefactorsContainer = document.querySelector('.bene-data + .bene-data'); 
+  // ^ If you have two ".bene-data" containers, ensure you're selecting the right element 
+  //   or give them unique IDs. Adjust as needed.
+
+  benefactorsContainer.innerHTML = topBenefactors
+    .map(
+      ([address, amt]) =>
+        `<p class="fs-6 ms-4 fw-medium top-benefactors">
+           ${truncateHash(address, 6, 4)} - ${amt.toFixed(2)} AMB
+         </p>`
+    )
+    .join('');
+}
+
+// ============================
+// 6. EXAMPLE USAGE / EXPORTS
+// ============================
+
+// Replace `0x8861186D9...F105` with the connected wallet address in your code:
+const walletAddress = '0x8861186D9513cFD5d1bEb199355448Ce5E96F105';
+
+initializeTable(walletAddress);
+
+export {
+  fetchTransactions,
+  initializeTable,
+  updateOtherSections
+};

@@ -9,6 +9,7 @@ const priceCache = {
 
 let walletAddress = null;
 let chartInstance = null;
+let balancePoll = null;
 
 // Configure token types
 const TOKEN_CONFIG = {
@@ -263,6 +264,10 @@ window.addEventListener('load', async () => {
 
 // Cleanup on unload
 window.addEventListener('beforeunload', () => {
-    clearInterval(balancePoll);
-    if (chartInstance) chartInstance.destroy();
+    if (balancePoll) {
+        clearInterval(balancePoll); // Clear the interval if it exists
+    }
+    if (chartInstance) {
+        chartInstance.destroy();
+    }
 });
