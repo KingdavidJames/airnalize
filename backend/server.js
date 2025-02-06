@@ -51,12 +51,12 @@ app.get('/api/transactions', async (req, res) => {
         const walletAddress = req.query.address; // Wallet address from query params
         const apiUrl = `https://blockscout-explorer.airdao.io/api/v2/addresses/${walletAddress}/transactions?filter=to%20%7C%20from`;
         const response = await axios.get(apiUrl);
-        console.log('Blockscout API Response:', response.data); // Log the Blockscout API response
+        // console.log('Blockscout API Response:', response.data); // Log the Blockscout API response
         res.json({
             success: true,
             data: response.data.items,
         });
-        console.log('Transactions fetched successfully:', response.data.items);
+        // console.log('Transactions fetched successfully:', response.data.items);
     } catch (error) {
         console.error('Error fetching transactions:', error.message);
         res.status(500).json({

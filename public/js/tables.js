@@ -1,105 +1,251 @@
 import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.min.js";
 
+const provider = new ethers.JsonRpcProvider("https://network.ambrosus.io/");
+
+async function logOnChainTxCount(walletAddress) {
+  try {
+    // getTransactionCount => number of transactions this address has sent
+    const txCount = await provider.getTransactionCount(walletAddress);
+    console.log(`On-chain transaction count for ${walletAddress}:`, txCount);
+  } catch (err) {
+    console.error("Failed to fetch on-chain transaction count:", err);
+  }
+}
+
+// =========================
+// 0. TOKEN CONFIG
+// =========================
+const knownTokens = {
+  "0x5cecbde7811ac0ed86be11827ae622b89bc429df": { symbol: "AST", decimals: 18 },
+  "0xd09270e917024e75086e27854740871f1c8e0e10": { symbol: "HBR", decimals: 18 },
+  "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de": { symbol: "USDC", decimals: 6 }
+};
+
+// We’ll treat native AMB as symbol "AMB" with decimals = 18 (for convenience)
+const NATIVE_SYMBOL = "AMB";
+const NATIVE_DECIMALS = 18;
+
 // =========================
 // 1. FETCH TRANSACTIONS
 // =========================
 async function fetchTransactions(walletAddress) {
   try {
-    // Call your backend, which queries Blockscout
-    const response = await fetch(`http://localhost:3000/api/transactions?address=${walletAddress}`);
+    const response = await fetch(
+      `http://localhost:3000/api/transactions?address=${walletAddress}`
+    );
     const data = await response.json();
-    
+
     if (!data.success) {
-      throw new Error(data.message || 'Failed to fetch transactions');
+      throw new Error(data.message || "Failed to fetch transactions");
     }
-    
-    // The raw transaction array is in data.data.items
+
     return data.data || [];
   } catch (error) {
-    console.error('Error fetching transactions:', error);
+    console.error("Error fetching transactions:", error);
     return [];
   }
 }
 
 // =========================
-// 2. FORMAT HELPERS
+// 2. HELPER FUNCTIONS
 // =========================
 
-// Convert a big-number string in wei to a “human” AMB value
+// (A) decodeERC20Transfer: 0xa9059cbb => transfer(address,uint256)
+function decodeERC20Transfer(inputHex) {
+  // next 32 bytes => to, next 32 => value
+  const toHex = "0x" + inputHex.slice(8, 8 + 64).slice(24);
+  const valueHex = "0x" + inputHex.slice(8 + 64, 8 + 128);
+
+  const toAddress = ethers.getAddress(toHex);
+  const rawValue = BigInt(valueHex);
+
+  return { methodName: "transfer", toAddress, rawValue };
+}
+
+// (B) decodeERC20Approve: 0x095ea7b3 => approve(address,uint256)
+function decodeERC20Approve(inputHex) {
+  const spenderHex = "0x" + inputHex.slice(8, 8 + 64).slice(24);
+  const amountHex = "0x" + inputHex.slice(8 + 64, 8 + 128);
+
+  const spender = ethers.getAddress(spenderHex);
+  const rawValue = BigInt(amountHex);
+
+  return { methodName: "approve", spender, rawValue };
+}
+
+// (C) decodeFunctionsMap: recognized signatures => decode function
+const decodeFunctionsMap = {
+  "0xa9059cbb": decodeERC20Transfer, // transfer
+  "0x095ea7b3": decodeERC20Approve // approve
+  // Add more if needed
+};
+
+// (D) decodeTransactionData:
+function decodeTransactionData(rawInput) {
+  if (!rawInput || rawInput.length < 10) {
+    return null;
+  }
+  const noPrefix = rawInput.startsWith("0x") ? rawInput.slice(2) : rawInput;
+  const methodSig = "0x" + noPrefix.slice(0, 8).toLowerCase();
+
+  const decodeFn = decodeFunctionsMap[methodSig];
+  if (!decodeFn) return null;
+
+  return decodeFn(noPrefix);
+}
+
+// (E) Format AMB from wei
 function formatAMB(valueInWei) {
   try {
-    // If valueInWei is "0" or empty, you’ll get "0.0" in many cases
     return ethers.formatEther(valueInWei);
   } catch {
     return "0";
   }
 }
 
-// Shorten an address/string to something like 0xabcd...1234
+// (F) Truncate addresses/hashes
 function truncateHash(hash, front = 10, back = 6) {
-  if (!hash || hash.length < front + back) {
-    return hash;
-  }
+  if (!hash || hash.length < front + back) return hash;
   return `${hash.slice(0, front)}...${hash.slice(-back)}`;
 }
 
-// Convert timestamp string (e.g. "2025-02-03T22:31:35.000000Z") to local date
+// (G) Format date
 function formatDate(timestamp) {
-  return new Date(timestamp).toLocaleString(); // e.g. "2/3/2025, 10:31:35 PM"
+  return new Date(timestamp).toLocaleString();
 }
 
 // =========================
-// 3. INITIALIZE THE TABLE
+// 3. BUILD TABLE ROW
+// =========================
+function buildTableRow(tx, index) {
+  const fromHash = tx.from?.hash || "N/A";
+  const toHash = tx.to?.hash || "Contract Creation";
+  const dateString = formatDate(tx.timestamp);
+
+  // 1) If there's native AMB
+  if (Number(tx.value) > 0) {
+    const amtAMB = formatAMB(tx.value);
+    return [
+      index + 1,
+      tx.hash,
+      fromHash,
+      toHash,
+      `${amtAMB} AMB`,
+      dateString
+    ];
+  }
+
+  // 2) If "method" is present => attempt decode
+  if (tx.method) {
+    const decoded = decodeTransactionData(tx.raw_input || "");
+    if (decoded) {
+      const contractAddr = (tx.to?.hash || "").toLowerCase();
+      const tokenInfo = knownTokens[contractAddr];
+
+      if (decoded.methodName === "transfer") {
+        if (tokenInfo) {
+          const amount = ethers.formatUnits(decoded.rawValue, tokenInfo.decimals);
+          return [
+            index + 1,
+            tx.hash,
+            fromHash,
+            decoded.toAddress,
+            `${amount} ${tokenInfo.symbol}`,
+            dateString
+          ];
+        } else {
+          return [
+            index + 1,
+            tx.hash,
+            fromHash,
+            decoded.toAddress,
+            "(Unknown token) transfer",
+            dateString
+          ];
+        }
+      } else if (decoded.methodName === "approve") {
+        if (tokenInfo) {
+          const amount = ethers.formatUnits(decoded.rawValue, tokenInfo.decimals);
+          return [
+            index + 1,
+            tx.hash,
+            fromHash,
+            decoded.spender,
+            `approve: ${amount} ${tokenInfo.symbol}`,
+            dateString
+          ];
+        } else {
+          return [
+            index + 1,
+            tx.hash,
+            fromHash,
+            decoded.spender,
+            "(Unknown token) approve",
+            dateString
+          ];
+        }
+      }
+
+      // fallback if recognized signature not handled
+      return [
+        index + 1,
+        tx.hash,
+        fromHash,
+        toHash,
+        `contractCall (unhandled)`,
+        dateString
+      ];
+    } else {
+      // can't decode => show method
+      return [
+        index + 1,
+        tx.hash,
+        fromHash,
+        toHash,
+        `contractCall: ${tx.method}`,
+        dateString
+      ];
+    }
+  }
+
+  // 3) Fallback if no method, no AMB
+  return [
+    index + 1,
+    tx.hash,
+    fromHash,
+    toHash,
+    "0 (No AMB)",
+    dateString
+  ];
+}
+
+// =========================
+// 4. INITIALIZE THE TABLE
 // =========================
 async function initializeTable(walletAddress) {
-  // Show loading state
-  const tableContainer = document.getElementById('tables');
-  tableContainer.innerHTML = '<p>Loading transactions...</p>';
+  const tableContainer = document.getElementById("tables");
+  tableContainer.innerHTML = "<p>Loading transactions...</p>";
 
-  // Fetch transactions from your backend
   const transactions = await fetchTransactions(walletAddress);
   if (!transactions || transactions.length === 0) {
-    tableContainer.innerHTML = '<p>No transactions found for this wallet.</p>';
+    tableContainer.innerHTML = "<p>No transactions found for this wallet.</p>";
     return;
   }
 
-  // Build the table data
-  const tableData = transactions.map((tx, index) => {
-    // from, to can be null or objects; handle carefully
-    const fromHash = tx.from?.hash || "N/A";
-    const toHash = tx.to?.hash || "Contract Creation";
-    
-    // Format the value (AMB)
-    // If it's an ERC20 transfer, tx.value might be "0"
-    // For actual coin transfers, tx.value in wei
-    const amountAMB = formatAMB(tx.value);
+  // --- NEW: update total Tx count
+  // Suppose you have an element with ID "txTotalCount" in your HTML
+  // document.getElementById("txTotalCount").textContent = transactions.length;
 
-    // Format the timestamp
-    const dateString = formatDate(tx.timestamp);
+  const tableData = transactions.map((tx, i) => buildTableRow(tx, i));
+  tableContainer.innerHTML = ""; // clear
 
-    // Return the row data
-    return [
-      index + 1,  // S/N
-      tx.hash,    // Full hash (we’ll truncate it in the GridJS formatter)
-      fromHash,
-      toHash,
-      `${amountAMB} AMB`,
-      dateString,
-    ];
-  });
-
-  tableContainer.innerHTML = ''; // Clear loading text
-
-  // ===============================
-  // 4. Initialize GridJS
-  // ===============================
   new gridjs.Grid({
     columns: [
       "S/N",
       {
         name: "Hash",
         formatter: (cell) => gridjs.html(`
-          <a href="https://explorer.airdao.io/tx/${cell}"
+          <a href="https://airdao.io/explorer/tx/${cell}"
              title="${cell}"
              style="font-weight:bold; text-decoration:underline; color:#000;">
             ${truncateHash(cell, 10, 10)}
@@ -119,31 +265,28 @@ async function initializeTable(walletAddress) {
         `),
       },
       "Amount",
-      "Date",
+      "Date"
     ],
     pagination: true,
     data: tableData,
     style: {
-      table: {
-        border: "none"
-      },
+      table: { border: "none" },
       th: {
         "background-color": "#031835",
         "text-align": "center",
         color: "#E3EFFF",
-        border: "none"
+        border: "none",
       },
       td: {
         "text-align": "center",
-        "background-color": "#E3EFFF"
+        "background-color": "#E3EFFF",
       },
       tbody: {
-        "background-color": "#E6E6E6"
-      }
-    }
-  }).render(document.getElementById("tables"));
-  
-  // Also update the other sections (Top Beneficiaries, Top Benefactors, Income/Expenditure)
+        "background-color": "#E6E6E6",
+      },
+    },
+  }).render(tableContainer);
+
   updateOtherSections(transactions, walletAddress);
 }
 
@@ -151,89 +294,147 @@ async function initializeTable(walletAddress) {
 // 5. UPDATE OTHER SECTIONS
 // =========================
 function updateOtherSections(transactions, walletAddress) {
-  // These objects will hold the aggregated sums
+  //
+  // Instead of a single totalCredited/totalDebited, we track by token symbol
+  //
+  // We'll store data in an object keyed by symbol (lowercase or uppercase).
+  // For example:
+  //   totals["AMB"] = { credited: 0, debited: 0 }
+  //   totals["HBR"] = { credited: 0, debited: 0 }
+  //   ...
+  // We'll fill them up as we parse each transaction.
+  //
+  const totals = {
+    AMB: { credited: 0, debited: 0 },
+    AST: { credited: 0, debited: 0 },
+    HBR: { credited: 0, debited: 0 },
+    USDC: { credited: 0, debited: 0 }
+  };
+
+  // We also track top addresses if needed
   const beneficiariesMap = {};
   const benefactorsMap = {};
-  let totalCredited = 0;
-  let totalDebited = 0;
-  let creditCount = 0;
-  let debitCount = 0;
 
   transactions.forEach((tx) => {
-    const rawValueAMB = formatAMB(tx.value); 
-    const valueAMB = parseFloat(rawValueAMB);
+    let amt = 0;
+    let symbol = null;
 
-    // “Credit” if your wallet is the “to” => you received
-    if (tx.to?.hash && tx.to.hash.toLowerCase() === walletAddress.toLowerCase()) {
-      totalCredited += valueAMB;
-      creditCount++;
-      // The entity that sent you (tx.from) is effectively a “benefactor”
-      const fromHash = tx.from?.hash || "Unknown";
-      benefactorsMap[fromHash] = (benefactorsMap[fromHash] || 0) + valueAMB;
+    const fromAddr = (tx.from?.hash || "").toLowerCase();
+    let toAddr = (tx.to?.hash || "ContractCreation").toLowerCase();
+
+    // 1) Check if it's native AMB
+    if (Number(tx.value) > 0) {
+      amt = parseFloat(formatAMB(tx.value));
+      symbol = NATIVE_SYMBOL; // "AMB"
+    } else if (tx.method) {
+      // decode ERC-20
+      const decoded = decodeTransactionData(tx.raw_input || "");
+      if (decoded && decoded.methodName === "transfer") {
+        // which token contract is this?
+        const contractAddr = toAddr; // the tx.to (the token contract)
+        const tokenInfo = knownTokens[contractAddr];
+        if (tokenInfo) {
+          amt = parseFloat(ethers.formatUnits(decoded.rawValue, tokenInfo.decimals));
+          symbol = tokenInfo.symbol.toUpperCase();
+        }
+        toAddr = decoded.toAddress.toLowerCase();
+      } else if (decoded && decoded.methodName === "approve") {
+        // typically no token movement, so skip
+      }
     }
-    // “Debit” if your wallet is the “from” => you sent out
-    else if (tx.from?.hash && tx.from.hash.toLowerCase() === walletAddress.toLowerCase()) {
-      totalDebited += valueAMB;
-      debitCount++;
-      // The entity that you sent to (tx.to) is effectively a “beneficiary”
-      const toHash = tx.to?.hash || "ContractCreation";
-      beneficiariesMap[toHash] = (beneficiariesMap[toHash] || 0) + valueAMB;
+
+    // If we recognized a symbol and amt
+    if (symbol) {
+      // inbound if (to == wallet)
+      if (toAddr === walletAddress.toLowerCase()) {
+        totals[symbol].credited += amt;
+        benefactorsMap[fromAddr] = (benefactorsMap[fromAddr] || 0) + amt;
+      } 
+      // outbound if (from == wallet)
+      else if (fromAddr === walletAddress.toLowerCase()) {
+        totals[symbol].debited += amt;
+        beneficiariesMap[toAddr] = (beneficiariesMap[toAddr] || 0) + amt;
+      }
     }
   });
 
-  // 5a. Update Income & Expenditure
-  document.getElementById('ttcAmb').textContent = totalCredited.toFixed(2);
-  document.getElementById('ttdAmb').textContent = totalDebited.toFixed(2);
-  document.getElementById('tcc').textContent = creditCount;
-  document.getElementById('tcd').textContent = debitCount;
+  // --- Now update DOM elements
+  // For AMB
+  document.getElementById("ttcAmb").textContent = totals.AMB.credited.toFixed(2);
+  document.getElementById("ttdAmb").textContent = totals.AMB.debited.toFixed(2);
 
-  // 5b. Sort & display Top Beneficiaries (addresses you sent to)
+  // For HBR
+  // (You need HTML IDs: ttcHbr, ttdHbr)
+  // document.getElementById("ttcHbr").textContent = totals.HBR.credited.toFixed(2);
+  // document.getElementById("ttdHbr").textContent = totals.HBR.debited.toFixed(2);
+
+  // For AST
+  // (HTML IDs: ttcAst, ttdAst)
+  // document.getElementById("ttcAst").textContent = totals.AST.credited.toFixed(2);
+  // document.getElementById("ttdAst").textContent = totals.AST.debited.toFixed(2);
+
+  // For USDC
+  // (HTML IDs: ttcUsdc, ttdUsdc)
+  // document.getElementById("ttcUsdc").textContent = totals.USDC.credited.toFixed(2);
+  // document.getElementById("ttdUsdc").textContent = totals.USDC.debited.toFixed(2);
+
+  //
+  // If you previously had "ttcAmb" and "ttdAmb" for everything,
+  // now each token has its own pair of IDs. The code above updates them.
+  //
+
+
+  // Log to console: total credit/debit for HBR, USDC, AST
+  console.log(`Total credited HBR: ${totals.HBR.credited}`);
+  console.log(`Total debited HBR:  ${totals.HBR.debited}`);
+
+  console.log(`Total credited AST: ${totals.AST.credited}`);
+  console.log(`Total debited AST:  ${totals.AST.debited}`);
+
+  console.log(`Total credited USDC: ${totals.USDC.credited}`);
+  console.log(`Total debited USDC:  ${totals.USDC.debited}`);
+
+
+  // You can also gather top beneficiaries/benefactors if you want
   const topBeneficiaries = Object.entries(beneficiariesMap)
-    .sort((a, b) => b[1] - a[1]) // descending by total
+    .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-
-  // 5c. Sort & display Top Benefactors (addresses that sent to you)
   const topBenefactors = Object.entries(benefactorsMap)
-    .sort((a, b) => b[1] - a[1]) // descending
+    .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  // Update the DOM for top beneficiaries
-  const beneContainer = document.querySelector('.bene-data');
+  const beneContainer = document.querySelector(".bene-data");
   beneContainer.innerHTML = topBeneficiaries
     .map(
-      ([address, amt]) =>
-        `<p class="fs-6 ms-4 fw-medium top-beneficiaries">
-           ${truncateHash(address, 6, 4)} - ${amt.toFixed(2)} AMB
-         </p>`
+      ([address, val]) => `
+      <p class="fs-6 ms-4 fw-medium top-beneficiaries">
+        ${truncateHash(address, 6, 4)} - ${val.toFixed(2)}
+      </p>`
     )
-    .join('');
+    .join("");
 
-  // Update the DOM for top benefactors
-  const benefactorsContainer = document.querySelector('.bene-data + .bene-data'); 
-  // ^ If you have two ".bene-data" containers, ensure you're selecting the right element 
-  //   or give them unique IDs. Adjust as needed.
-
+  const benefactorsContainer = document.querySelector(".benef-data");
   benefactorsContainer.innerHTML = topBenefactors
     .map(
-      ([address, amt]) =>
-        `<p class="fs-6 ms-4 fw-medium top-benefactors">
-           ${truncateHash(address, 6, 4)} - ${amt.toFixed(2)} AMB
-         </p>`
+      ([address, val]) => `
+      <p class="fs-6 ms-4 fw-medium top-benefactors">
+        ${truncateHash(address, 6, 4)} - ${val.toFixed(2)}
+      </p>`
     )
-    .join('');
+    .join("");
 }
 
 // ============================
 // 6. EXAMPLE USAGE / EXPORTS
 // ============================
-
-// Replace `0x8861186D9...F105` with the connected wallet address in your code:
-const walletAddress = '0x8861186D9513cFD5d1bEb199355448Ce5E96F105';
-
+const walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105";
 initializeTable(walletAddress);
+logOnChainTxCount(walletAddress);
 
 export {
+  knownTokens,
   fetchTransactions,
+  decodeTransactionData,
   initializeTable,
   updateOtherSections
 };

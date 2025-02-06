@@ -1,131 +1,19 @@
-{
-    "timestamp": "2025-01-14T18:28:00.000000Z",
-    "fee": {
-      "type": "actual",
-      "value": "0"
-    },
-    "gas_limit": "21000",
-    "block": 34481354,
-    "status": "ok",
-    "method": null,
-    "confirmations": 323591,
-    "type": 0,
-    "exchange_rate": "0.00673014",
-    "to": {
-      "ens_domain_name": null,
-      "hash": "0xffB74A71Bc3a14c8aC200708e72541bA60648635",
-      "implementations": [],
-      "is_contract": false,
-      "is_verified": false,
-      "metadata": null,
-      "name": null,
-      "private_tags": [],
-      "proxy_type": null,
-      "public_tags": [],
-      "watchlist_names": []
-    },
-    "tx_burnt_fee": null,
-    "max_fee_per_gas": null,
-    "result": "success",
-    "hash": "0x331db510c4adebc5203cea74343826fc16a3801ecfd444613dc6a46da3070b1e",
-    "gas_price": "0",
-    "priority_fee": null,
-    "base_fee_per_gas": null,
-    "from": {
-      "ens_domain_name": null,
-      "hash": "0x8861186D9513cFD5d1bEb199355448Ce5E96F105",
-      "implementations": [],
-      "is_contract": false,
-      "is_verified": false,
-      "metadata": null,
-      "name": null,
-      "private_tags": [],
-      "proxy_type": null,
-      "public_tags": [],
-      "watchlist_names": []
-    },
-    "token_transfers": null,
-    "tx_types": [
-      "coin_transfer"
-    ],
-    "gas_used": "21000",
-    "created_contract": null,
-    "position": 1,
-    "nonce": 9,
-    "has_error_in_internal_txs": false,
-    "actions": [],
-    "decoded_input": null,
-    "token_transfers_overflow": null,
-    "raw_input": "0x",
-    "value": "2040000000000000000",
-    "max_priority_fee_per_gas": null,
-    "revert_reason": null,
-    "confirmation_duration": [0, 6162],
-    "tx_tag": null
-  },
+import { ethers } from "ethers";
+// Create a provider to connect to AirDAO
+// (Replace with an actual AirDAO RPC endpoint if needed.)
+const provider = new ethers.JsonRpcProvider("https://network.ambrosus.io/");
 
-  {
-    "timestamp": "2025-01-16T01:35:45.000000Z",
-    "fee": {
-      "type": "actual",
-      "value": "0"
-    },
-    "gas_limit": "21000",
-    "block": 34501472,
-    "status": "ok",
-    "method": null,
-    "confirmations": 303473,
-    "type": 0,
-    "exchange_rate": "0.00673014",
-    "to": {
-      "ens_domain_name": null,
-      "hash": "0x2260B7A1c07D0B223b640cb82E4b0c4c1a996090",
-      "implementations": [],
-      "is_contract": false,
-      "is_verified": false,
-      "metadata": null,
-      "name": null,
-      "private_tags": [],
-      "proxy_type": null,
-      "public_tags": [],
-      "watchlist_names": []
-    },
-    "tx_burnt_fee": null,
-    "max_fee_per_gas": null,
-    "result": "success",
-    "hash": "0xc2bb7a363f7c0de345e74f8fd6b43a7ae74702da81eff99b149765c432dbb94d",
-    "gas_price": "0",
-    "priority_fee": null,
-    "base_fee_per_gas": null,
-    "from": {
-      "ens_domain_name": null,
-      "hash": "0x8861186D9513cFD5d1bEb199355448Ce5E96F105",
-      "implementations": [],
-      "is_contract": false,
-      "is_verified": false,
-      "metadata": null,
-      "name": null,
-      "private_tags": [],
-      "proxy_type": null,
-      "public_tags": [],
-      "watchlist_names": []
-    },
-    "token_transfers": null,
-    "tx_types": [
-      "coin_transfer"
-    ],
-    "gas_used": "21000",
-    "created_contract": null,
-    "position": 2,
-    "nonce": 11,
-    "has_error_in_internal_txs": false,
-    "actions": [],
-    "decoded_input": null,
-    "token_transfers_overflow": null,
-    "raw_input": "0x",
-    "value": "2040000000000000000",
-    "max_priority_fee_per_gas": null,
-    "revert_reason": null,
-    "confirmation_duration": [0, 6162],
-    "tx_tag": null
-  },
+// Example function that logs the "on-chain" tx count
+async function logOnChainTxCount(walletAddress) {
+  try {
+    // getTransactionCount => number of transactions this address has sent
+    const txCount = await provider.getTransactionCount(walletAddress);
+    console.log(`On-chain transaction count for ${walletAddress}:`, txCount);
+  } catch (err) {
+    console.error("Failed to fetch on-chain transaction count:", err);
+  }
+}
+
+// Example usage:
+const walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105";
+logOnChainTxCount(walletAddress);
