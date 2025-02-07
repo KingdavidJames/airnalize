@@ -393,6 +393,8 @@ function updateOtherSections(transactions, walletAddress) {
 
   console.log(`Total credited USDC: ${totals.USDC.credited}`);
   console.log(`Total debited USDC:  ${totals.USDC.debited}`);
+  
+  console.log('transactionlength: ', transactions.length);
 
 
   // You can also gather top beneficiaries/benefactors if you want
