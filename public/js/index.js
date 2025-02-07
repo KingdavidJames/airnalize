@@ -52,9 +52,11 @@ const provider = new ethers.JsonRpcProvider('https://network.ambrosus.io/');
 // Fetch token price with caching
 async function fetchTokenPrice(tokenKey) {
     try {
-        // Return cached data if still valid
+        const tokenId = TOKEN_CONFIG[tokenKey].priceFeed.split('ids=')[1].split('&')[0];
+        // Check if cached data is still valid
         if (Date.now() - priceCache.timestamp < priceCache.ttl && priceCache.data) {
-            return priceCache.data[TOKEN_CONFIG[tokenKey].priceFeed.split('ids=')[1].split('&')[0]]?.usd || 0;
+            const cachedPrice = priceCache.data[tokenId]?.usd || 0;
+            return cachedPrice;
         }
 
         // Use your backend proxy
@@ -76,7 +78,7 @@ async function fetchTokenPrice(tokenKey) {
         priceCache.data = data.data; // Store the parsed data
         priceCache.timestamp = Date.now();
 
-        return data.data[TOKEN_CONFIG[tokenKey].priceFeed.split('ids=')[1].split('&')[0]]?.usd || 0;
+        return data.data[tokenId]?.usd || 0;
     } catch (error) {
         console.error(`Price fetch failed for ${tokenKey}:`, error);
         return 0;

@@ -2,9 +2,11 @@ import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.mi
 
 const provider = new ethers.JsonRpcProvider("https://network.ambrosus.io/");
 
+// -------------------------
+// Utility: Get on-chain Tx count
+// -------------------------
 async function logOnChainTxCount(walletAddress) {
   try {
-    // getTransactionCount => number of transactions this address has sent
     const txCount = await provider.getTransactionCount(walletAddress);
     console.log(`On-chain transaction count for ${walletAddress}:`, txCount);
   } catch (err) {
@@ -12,33 +14,95 @@ async function logOnChainTxCount(walletAddress) {
   }
 }
 
-// =========================
-// 0. TOKEN CONFIG
-// =========================
+// -------------------------
+// 0. TOKEN CONFIGURATION
+// -------------------------
 const knownTokens = {
   "0x5cecbde7811ac0ed86be11827ae622b89bc429df": { symbol: "AST", decimals: 18 },
   "0xd09270e917024e75086e27854740871f1c8e0e10": { symbol: "HBR", decimals: 18 },
   "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de": { symbol: "USDC", decimals: 6 }
 };
 
-// We’ll treat native AMB as symbol "AMB" with decimals = 18 (for convenience)
+// Treat native AMB as such:
 const NATIVE_SYMBOL = "AMB";
 const NATIVE_DECIMALS = 18;
 
-// =========================
+// For price fetching we create a TOKEN_CONFIG and a mapping from our symbol to CoinGecko id:
+const TOKEN_CONFIG = {
+  AMB: {
+    type: "native",
+    priceFeed: "https://api.coingecko.com/api/v3/simple/price?ids=amber&vs_currencies=usd"
+  },
+  AST: {
+    type: "erc20",
+    address: "0x5cecbde7811ac0ed86be11827ae622b89bc429df",
+    priceFeed: "https://api.coingecko.com/api/v3/simple/price?ids=astra-2&vs_currencies=usd"
+  },
+  HBR: {
+    type: "erc20",
+    address: "0xd09270e917024e75086e27854740871f1c8e0e10",
+    priceFeed: "https://api.coingecko.com/api/v3/simple/price?ids=harbor-4&vs_currencies=usd"
+  },
+  USDC: {
+    type: "erc20",
+    address: "0xff9f502976e7bd2b4901ad7dd1131bb81e5567de",
+    priceFeed: "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=usd"
+  }
+};
+// Map our token symbols to CoinGecko ids:
+const tokenIds = {
+  AMB: "amber",
+  AST: "astra-2",
+  HBR: "harbor-4",
+  USDC: "usd-coin"
+};
+
+// Set up a simple cache for prices (TTL = 5 minutes)
+const priceCache = {
+  data: null,
+  timestamp: 0,
+  ttl: 300000 // 300,000 ms = 5 minutes
+};
+
+// Helper function to fetch prices from your backend proxy
+async function getTokenPrices() {
+  try {
+    if (Date.now() - priceCache.timestamp < priceCache.ttl && priceCache.data) {
+      return priceCache.data;
+    }
+    // Your backend proxy URL for prices (adjust as needed)
+    const backendUrl = "http://localhost:3000/api/prices";
+    const response = await fetch(backendUrl, {
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      }
+    });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error("Failed to fetch data from backend");
+    }
+    priceCache.data = data.data; // assume data.data is an object keyed by CoinGecko ids (e.g., { amber: { usd: 0.5 }, ... })
+    priceCache.timestamp = Date.now();
+    return data.data;
+  } catch (error) {
+    console.error("Error fetching token prices:", error);
+    return {};
+  }
+}
+
+// -------------------------
 // 1. FETCH TRANSACTIONS
-// =========================
+// -------------------------
 async function fetchTransactions(walletAddress) {
   try {
     const response = await fetch(
       `http://localhost:3000/api/transactions?address=${walletAddress}`
     );
     const data = await response.json();
-
     if (!data.success) {
       throw new Error(data.message || "Failed to fetch transactions");
     }
-
     return data.data || [];
   } catch (error) {
     console.error("Error fetching transactions:", error);
@@ -46,19 +110,16 @@ async function fetchTransactions(walletAddress) {
   }
 }
 
-// =========================
-// 2. HELPER FUNCTIONS
-// =========================
+// -------------------------
+// 2. HELPER FUNCTIONS (decoding, formatting)
+// -------------------------
 
 // (A) decodeERC20Transfer: 0xa9059cbb => transfer(address,uint256)
 function decodeERC20Transfer(inputHex) {
-  // next 32 bytes => to, next 32 => value
   const toHex = "0x" + inputHex.slice(8, 8 + 64).slice(24);
   const valueHex = "0x" + inputHex.slice(8 + 64, 8 + 128);
-
   const toAddress = ethers.getAddress(toHex);
   const rawValue = BigInt(valueHex);
-
   return { methodName: "transfer", toAddress, rawValue };
 }
 
@@ -66,35 +127,29 @@ function decodeERC20Transfer(inputHex) {
 function decodeERC20Approve(inputHex) {
   const spenderHex = "0x" + inputHex.slice(8, 8 + 64).slice(24);
   const amountHex = "0x" + inputHex.slice(8 + 64, 8 + 128);
-
   const spender = ethers.getAddress(spenderHex);
   const rawValue = BigInt(amountHex);
-
   return { methodName: "approve", spender, rawValue };
 }
 
-// (C) decodeFunctionsMap: recognized signatures => decode function
+// (C) decodeFunctionsMap: recognized signatures
 const decodeFunctionsMap = {
-  "0xa9059cbb": decodeERC20Transfer, // transfer
-  "0x095ea7b3": decodeERC20Approve // approve
-  // Add more if needed
+  "0xa9059cbb": decodeERC20Transfer,
+  "0x095ea7b3": decodeERC20Approve
+  // Add more signatures if needed
 };
 
 // (D) decodeTransactionData:
 function decodeTransactionData(rawInput) {
-  if (!rawInput || rawInput.length < 10) {
-    return null;
-  }
+  if (!rawInput || rawInput.length < 10) return null;
   const noPrefix = rawInput.startsWith("0x") ? rawInput.slice(2) : rawInput;
   const methodSig = "0x" + noPrefix.slice(0, 8).toLowerCase();
-
   const decodeFn = decodeFunctionsMap[methodSig];
   if (!decodeFn) return null;
-
   return decodeFn(noPrefix);
 }
 
-// (E) Format AMB from wei
+// (E) Format native AMB (from wei)
 function formatAMB(valueInWei) {
   try {
     return ethers.formatEther(valueInWei);
@@ -109,20 +164,20 @@ function truncateHash(hash, front = 10, back = 6) {
   return `${hash.slice(0, front)}...${hash.slice(-back)}`;
 }
 
-// (G) Format date
+// (G) Format date string
 function formatDate(timestamp) {
   return new Date(timestamp).toLocaleString();
 }
 
-// =========================
+// -------------------------
 // 3. BUILD TABLE ROW
-// =========================
+// -------------------------
 function buildTableRow(tx, index) {
   const fromHash = tx.from?.hash || "N/A";
   const toHash = tx.to?.hash || "Contract Creation";
   const dateString = formatDate(tx.timestamp);
 
-  // 1) If there's native AMB
+  // If native AMB transfer:
   if (Number(tx.value) > 0) {
     const amtAMB = formatAMB(tx.value);
     return [
@@ -130,18 +185,17 @@ function buildTableRow(tx, index) {
       tx.hash,
       fromHash,
       toHash,
-      `${amtAMB} AMB`,
+      `${amtAMB} ${NATIVE_SYMBOL}`,
       dateString
     ];
   }
 
-  // 2) If "method" is present => attempt decode
+  // Otherwise, if a contract call with a method field exists, try to decode it.
   if (tx.method) {
     const decoded = decodeTransactionData(tx.raw_input || "");
     if (decoded) {
       const contractAddr = (tx.to?.hash || "").toLowerCase();
       const tokenInfo = knownTokens[contractAddr];
-
       if (decoded.methodName === "transfer") {
         if (tokenInfo) {
           const amount = ethers.formatUnits(decoded.rawValue, tokenInfo.decimals);
@@ -185,8 +239,7 @@ function buildTableRow(tx, index) {
           ];
         }
       }
-
-      // fallback if recognized signature not handled
+      // Fallback for recognized but not specifically handled signatures:
       return [
         index + 1,
         tx.hash,
@@ -196,7 +249,7 @@ function buildTableRow(tx, index) {
         dateString
       ];
     } else {
-      // can't decode => show method
+      // If we cannot decode, display the method signature.
       return [
         index + 1,
         tx.hash,
@@ -208,7 +261,7 @@ function buildTableRow(tx, index) {
     }
   }
 
-  // 3) Fallback if no method, no AMB
+  // Fallback if no method and no native value.
   return [
     index + 1,
     tx.hash,
@@ -219,26 +272,22 @@ function buildTableRow(tx, index) {
   ];
 }
 
-// =========================
+// -------------------------
 // 4. INITIALIZE THE TABLE
-// =========================
+// -------------------------
 async function initializeTable(walletAddress) {
   const tableContainer = document.getElementById("tables");
   tableContainer.innerHTML = "<p>Loading transactions...</p>";
-
   const transactions = await fetchTransactions(walletAddress);
   if (!transactions || transactions.length === 0) {
     tableContainer.innerHTML = "<p>No transactions found for this wallet.</p>";
     return;
   }
-
-  // --- NEW: update total Tx count
-  // Suppose you have an element with ID "txTotalCount" in your HTML
+  // Optionally update total Tx count in your UI (if you have an element for that)
   // document.getElementById("txTotalCount").textContent = transactions.length;
 
   const tableData = transactions.map((tx, i) => buildTableRow(tx, i));
-  tableContainer.innerHTML = ""; // clear
-
+  tableContainer.innerHTML = "";
   new gridjs.Grid({
     columns: [
       "S/N",
@@ -250,19 +299,19 @@ async function initializeTable(walletAddress) {
              style="font-weight:bold; text-decoration:underline; color:#000;">
             ${truncateHash(cell, 10, 10)}
           </a>
-        `),
+        `)
       },
       {
         name: "From",
         formatter: (cell) => gridjs.html(`
           <span title="${cell}">${truncateHash(cell, 10, 10)}</span>
-        `),
+        `)
       },
       {
         name: "To",
         formatter: (cell) => gridjs.html(`
           <span title="${cell}">${truncateHash(cell, 10, 10)}</span>
-        `),
+        `)
       },
       "Amount",
       "Date"
@@ -275,35 +324,29 @@ async function initializeTable(walletAddress) {
         "background-color": "#031835",
         "text-align": "center",
         color: "#E3EFFF",
-        border: "none",
+        border: "none"
       },
       td: {
         "text-align": "center",
-        "background-color": "#E3EFFF",
+        "background-color": "#E3EFFF"
       },
       tbody: {
-        "background-color": "#E6E6E6",
-      },
-    },
+        "background-color": "#E6E6E6"
+      }
+    }
   }).render(tableContainer);
 
-  updateOtherSections(transactions, walletAddress);
+  // IMPORTANT: update other dashboard sections (benefactors/beneficiaries) and include USD equivalents.
+  await updateOtherSections(transactions, walletAddress);
 }
 
-// =========================
-// 5. UPDATE OTHER SECTIONS
-// =========================
-function updateOtherSections(transactions, walletAddress) {
-  //
-  // Instead of a single totalCredited/totalDebited, we track by token symbol
-  //
-  // We'll store data in an object keyed by symbol (lowercase or uppercase).
-  // For example:
-  //   totals["AMB"] = { credited: 0, debited: 0 }
-  //   totals["HBR"] = { credited: 0, debited: 0 }
-  //   ...
-  // We'll fill them up as we parse each transaction.
-  //
+// -------------------------
+// 5. UPDATE OTHER SECTIONS (with USD value)
+// -------------------------
+// Make this function async so we can await price fetching.
+async function updateOtherSections(transactions, walletAddress) {
+  // We'll track totals by token symbol.
+  // For example: totals["AMB"] = { credited: 0, debited: 0 }
   const totals = {
     AMB: { credited: 0, debited: 0 },
     AST: { credited: 0, debited: 0 },
@@ -311,9 +354,9 @@ function updateOtherSections(transactions, walletAddress) {
     USDC: { credited: 0, debited: 0 }
   };
 
-  // We also track top addresses if needed
-  const beneficiariesMap = {};
-  const benefactorsMap = {};
+  // For top lists, we’ll track by counterparty address.
+  const beneficiariesMap = {}; // Outgoing: tokens you sent (key: recipient address + "-" + symbol)
+  const benefactorsMap = {};   // Incoming: tokens you received (key: sender address + "-" + symbol)
 
   transactions.forEach((tx) => {
     let amt = 0;
@@ -322,113 +365,112 @@ function updateOtherSections(transactions, walletAddress) {
     const fromAddr = (tx.from?.hash || "").toLowerCase();
     let toAddr = (tx.to?.hash || "ContractCreation").toLowerCase();
 
-    // 1) Check if it's native AMB
+    // Case 1: Native AMB transfer.
     if (Number(tx.value) > 0) {
       amt = parseFloat(formatAMB(tx.value));
       symbol = NATIVE_SYMBOL; // "AMB"
-    } else if (tx.method) {
-      // decode ERC-20
+    }
+    // Case 2: Token transfer via contract call.
+    else if (tx.method) {
       const decoded = decodeTransactionData(tx.raw_input || "");
       if (decoded && decoded.methodName === "transfer") {
-        // which token contract is this?
-        const contractAddr = toAddr; // the tx.to (the token contract)
+        // For token transfers, the token contract is in tx.to.
+        const contractAddr = toAddr;
         const tokenInfo = knownTokens[contractAddr];
         if (tokenInfo) {
           amt = parseFloat(ethers.formatUnits(decoded.rawValue, tokenInfo.decimals));
           symbol = tokenInfo.symbol.toUpperCase();
         }
+        // Use the actual destination address from the decoded data.
         toAddr = decoded.toAddress.toLowerCase();
-      } else if (decoded && decoded.methodName === "approve") {
-        // typically no token movement, so skip
       }
+      // We skip "approve" calls as they typically do not move tokens.
     }
 
-    // If we recognized a symbol and amt
     if (symbol) {
-      // inbound if (to == wallet)
+      // If the destination address (toAddr) equals the wallet address, then you are receiving tokens.
       if (toAddr === walletAddress.toLowerCase()) {
         totals[symbol].credited += amt;
-        benefactorsMap[fromAddr] = (benefactorsMap[fromAddr] || 0) + amt;
-      } 
-      // outbound if (from == wallet)
+        const key = `${fromAddr}-${symbol}`;
+        if (!benefactorsMap[key]) {
+          benefactorsMap[key] = { address: fromAddr, symbol, amount: 0 };
+        }
+        benefactorsMap[key].amount += amt;
+      }
+      // If the sender (fromAddr) equals the wallet address, then you are sending tokens.
       else if (fromAddr === walletAddress.toLowerCase()) {
         totals[symbol].debited += amt;
-        beneficiariesMap[toAddr] = (beneficiariesMap[toAddr] || 0) + amt;
+        const key = `${toAddr}-${symbol}`;
+        if (!beneficiariesMap[key]) {
+          beneficiariesMap[key] = { address: toAddr, symbol, amount: 0 };
+        }
+        beneficiariesMap[key].amount += amt;
       }
     }
   });
 
-  // --- Now update DOM elements
-  // For AMB
+  // Fetch current token prices from your backend using the same method as your index.js.
+  const prices = await getTokenPrices();
+
+  // Now update the DOM elements for totals.
+  // (Here we update only AMB; similar elements can be added for other tokens.)
   document.getElementById("ttcAmb").textContent = totals.AMB.credited.toFixed(2);
   document.getElementById("ttdAmb").textContent = totals.AMB.debited.toFixed(2);
 
-  // For HBR
-  // (You need HTML IDs: ttcHbr, ttdHbr)
-  // document.getElementById("ttcHbr").textContent = totals.HBR.credited.toFixed(2);
-  // document.getElementById("ttdHbr").textContent = totals.HBR.debited.toFixed(2);
-
-  // For AST
-  // (HTML IDs: ttcAst, ttdAst)
-  // document.getElementById("ttcAst").textContent = totals.AST.credited.toFixed(2);
-  // document.getElementById("ttdAst").textContent = totals.AST.debited.toFixed(2);
-
-  // For USDC
-  // (HTML IDs: ttcUsdc, ttdUsdc)
-  // document.getElementById("ttcUsdc").textContent = totals.USDC.credited.toFixed(2);
-  // document.getElementById("ttdUsdc").textContent = totals.USDC.debited.toFixed(2);
-
-  //
-  // If you previously had "ttcAmb" and "ttdAmb" for everything,
-  // now each token has its own pair of IDs. The code above updates them.
-  //
-
-
-  // Log to console: total credit/debit for HBR, USDC, AST
+  // Log totals for the tokens.
   console.log(`Total credited HBR: ${totals.HBR.credited}`);
-  console.log(`Total debited HBR:  ${totals.HBR.debited}`);
-
+  console.log(`Total debited HBR: ${totals.HBR.debited}`);
   console.log(`Total credited AST: ${totals.AST.credited}`);
-  console.log(`Total debited AST:  ${totals.AST.debited}`);
-
+  console.log(`Total debited AST: ${totals.AST.debited}`);
   console.log(`Total credited USDC: ${totals.USDC.credited}`);
-  console.log(`Total debited USDC:  ${totals.USDC.debited}`);
-  
-  console.log('transactionlength: ', transactions.length);
+  console.log(`Total debited USDC: ${totals.USDC.debited}`);
+  console.log("Total transactions (from Blockscout):", transactions.length);
 
+  // For the top lists, calculate each entry’s USD equivalent.
+  // Use our tokenIds mapping to look up the correct price from the prices object.
+  const beneficiariesArr = Object.values(beneficiariesMap).map((entry) => {
+    const priceForToken = prices[tokenIds[entry.symbol]]?.usd || 0;
+    const usdValue = entry.amount * priceForToken;
+    return { ...entry, usdValue };
+  });
+  const benefactorsArr = Object.values(benefactorsMap).map((entry) => {
+    const priceForToken = prices[tokenIds[entry.symbol]]?.usd || 0;
+    const usdValue = entry.amount * priceForToken;
+    return { ...entry, usdValue };
+  });
 
-  // You can also gather top beneficiaries/benefactors if you want
-  const topBeneficiaries = Object.entries(beneficiariesMap)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-  const topBenefactors = Object.entries(benefactorsMap)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+  // Sort each array descending by USD value.
+  beneficiariesArr.sort((a, b) => b.usdValue - a.usdValue);
+  benefactorsArr.sort((a, b) => b.usdValue - a.usdValue);
 
+  // Update the DOM for top beneficiaries.
   const beneContainer = document.querySelector(".bene-data");
-  beneContainer.innerHTML = topBeneficiaries
+  beneContainer.innerHTML = beneficiariesArr
+    .slice(0, 5)
     .map(
-      ([address, val]) => `
+      (entry) => `
       <p class="fs-6 ms-4 fw-medium top-beneficiaries">
-        ${truncateHash(address, 6, 4)} - ${val.toFixed(2)}
+        ${truncateHash(entry.address, 6, 4)} - ${entry.amount.toFixed(2)} ${entry.symbol} (${entry.usdValue.toFixed(2)}$)
       </p>`
     )
     .join("");
 
+  // Update the DOM for top benefactors.
   const benefactorsContainer = document.querySelector(".benef-data");
-  benefactorsContainer.innerHTML = topBenefactors
+  benefactorsContainer.innerHTML = benefactorsArr
+    .slice(0, 5)
     .map(
-      ([address, val]) => `
+      (entry) => `
       <p class="fs-6 ms-4 fw-medium top-benefactors">
-        ${truncateHash(address, 6, 4)} - ${val.toFixed(2)}
+        ${truncateHash(entry.address, 6, 4)} - ${entry.amount.toFixed(2)} ${entry.symbol} (${entry.usdValue.toFixed(2)}$)
       </p>`
     )
     .join("");
 }
 
-// ============================
+// -------------------------
 // 6. EXAMPLE USAGE / EXPORTS
-// ============================
+// -------------------------
 const walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105";
 initializeTable(walletAddress);
 logOnChainTxCount(walletAddress);
