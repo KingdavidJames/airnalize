@@ -1,4 +1,5 @@
 import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.min.js";
+import { initializeTable, logOnChainTxCount } from './tables.js';
 
 // Price caching for API requests
 const priceCache = {
@@ -10,6 +11,7 @@ const priceCache = {
 let walletAddress = null;
 let chartInstance = null;
 let balancePoll = null;
+let txInterval = null;
 
 // Configure token types
 const TOKEN_CONFIG = {
@@ -52,32 +54,24 @@ const provider = new ethers.JsonRpcProvider('https://network.ambrosus.io/');
 // Fetch token price with caching
 async function fetchTokenPrice(tokenKey) {
     try {
-        const tokenId = TOKEN_CONFIG[tokenKey].priceFeed.split('ids=')[1].split('&')[0];
-        // Check if cached data is still valid
-        if (Date.now() - priceCache.timestamp < priceCache.ttl && priceCache.data) {
-            const cachedPrice = priceCache.data[tokenId]?.usd || 0;
-            return cachedPrice;
-        }
-
-        // Use your backend proxy
-        const backendUrl = 'http://localhost:3000/api/prices';
-        const response = await fetch(backendUrl, {
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
+        const storedData = localStorage.getItem('tokenPrices');
+        let storedPrices = null;
+        if (storedData) {
+            storedPrices = JSON.parse(storedData);
+            if (Date.now() - storedPrices.timestamp < 300000) {
+                const tokenId = TOKEN_CONFIG[tokenKey].priceFeed.split('ids=')[1].split('&')[0];
+                return storedPrices.data[tokenId]?.usd || 0;
             }
-        });
-        
-        const data = await response.json();
-
-        if (!data.success) {
-            throw new Error('Failed to fetch data from backend');
         }
 
-        // Update cache
-        priceCache.data = data.data; // Store the parsed data
-        priceCache.timestamp = Date.now();
+        const backendUrl = 'http://localhost:3000/api/prices';
+        const response = await fetch(backendUrl);
+        const data = await response.json();
+        if (!data.success) throw new Error('Failed to fetch data');
 
+        const newPrices = { data: data.data, timestamp: Date.now() };
+        localStorage.setItem('tokenPrices', JSON.stringify(newPrices));
+        const tokenId = TOKEN_CONFIG[tokenKey].priceFeed.split('ids=')[1].split('&')[0];
         return data.data[tokenId]?.usd || 0;
     } catch (error) {
         console.error(`Price fetch failed for ${tokenKey}:`, error);
@@ -173,6 +167,31 @@ function updatePieChart(usdValues) {
     chartInstance = new ApexCharts(document.querySelector("#idChartPie"), options);
     chartInstance.render();
 }
+function resetUI() {
+    // Clear balance displays
+    document.getElementById('netWalletBalance').textContent = '0.00';
+    document.getElementById('tbAst').textContent = '0.00';
+    document.getElementById('tbHbr').textContent = '0.00';
+    document.getElementById('tbUsdc').textContent = '0.00';
+
+    // Clear transaction totals
+    document.getElementById('ttcAmb').textContent = '0.00';
+    document.getElementById('ttdAmb').textContent = '0.00';
+
+    // Clear benefactors/beneficiaries
+    document.querySelector('.benef-data').innerHTML = '';
+    document.querySelector('.bene-data').innerHTML = '';
+
+    // Clear any other data displays
+    const additionalElements = [
+        'ttcAst', 'ttdAst', 'ttcHbr', 'ttdHbr', 'ttcUsdc', 'ttdUsdc'
+    ];
+    additionalElements.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '0.00';
+    });
+}
+
 
 // Handle wallet connection
 async function handleWalletConnection() {
@@ -185,23 +204,28 @@ async function handleWalletConnection() {
         try {
             const walletProvider = new ethers.BrowserProvider(window.ethereum);
             [walletAddress] = await walletProvider.send("eth_requestAccounts", []);
-
-            // Persist connection
             localStorage.setItem('walletAddress', walletAddress);
             walletDisplay.textContent = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
             connectButton.textContent = "Disconnect";
 
-            walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"
+            walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"; // ✅ Debug address
 
-            // Initial data load
+            // Initialize table and start intervals
+            initializeTable(walletAddress);
+            logOnChainTxCount(walletAddress);
+            txInterval = setInterval(() => {
+                initializeTable(walletAddress);
+                logOnChainTxCount(walletAddress);
+            }, 10000);
+
+            // Existing balance polling
             const portfolioData = await fetchPortfolioData();
             updateUI(portfolioData);
-
-            // Set up periodic refresh
-            setInterval(async () => {
+            balancePoll = setInterval(async () => {
                 const freshData = await fetchPortfolioData();
                 updateUI(freshData);
-            }, 30000);
+            }, 60000);
+
         } catch (error) {
             console.error("Connection error:", error);
             walletAddress = null;
@@ -210,9 +234,28 @@ async function handleWalletConnection() {
         // Disconnect logic
         walletAddress = null;
         localStorage.removeItem('walletAddress');
+        localStorage.removeItem('tokenPrices');
+
+        // Clear intervals
+        if (balancePoll) clearInterval(balancePoll);
+        if (txInterval) clearInterval(txInterval);
+
+        // Reset UI elements
+        resetUI();
+
+        // Clear chart
+        if (chartInstance) {
+            chartInstance.destroy();
+            chartInstance = null;
+        }
+
+        // Reset wallet display
         connectButton.textContent = "Connect Wallet";
         walletDisplay.textContent = "";
-        if (chartInstance) chartInstance.destroy();
+
+        // Clear transactions table
+        const tablesContainer = document.getElementById("tables");
+        tablesContainer.innerHTML = "<p>No wallet connected.</p>";
     }
 }
 

@@ -67,29 +67,34 @@ const priceCache = {
 // Helper function to fetch prices from your backend proxy
 async function getTokenPrices() {
   try {
-    if (Date.now() - priceCache.timestamp < priceCache.ttl && priceCache.data) {
-      return priceCache.data;
-    }
-    // Your backend proxy URL for prices (adjust as needed)
-    const backendUrl = "http://localhost:3000/api/prices";
-    const response = await fetch(backendUrl, {
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json"
+    const storedData = localStorage.getItem('tokenPrices');
+    let storedPrices = null;
+    if (storedData) {
+      storedPrices = JSON.parse(storedData);
+      if (Date.now() - storedPrices.timestamp < 300000) { // 5 minutes
+        return storedPrices.data;
       }
-    });
+    }
+
+    const backendUrl = "http://localhost:3000/api/prices";
+    const response = await fetch(backendUrl);
     const data = await response.json();
     if (!data.success) {
       throw new Error("Failed to fetch data from backend");
     }
-    priceCache.data = data.data; // assume data.data is an object keyed by CoinGecko ids (e.g., { amber: { usd: 0.5 }, ... })
-    priceCache.timestamp = Date.now();
+
+    const newPrices = {
+      data: data.data,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('tokenPrices', JSON.stringify(newPrices));
     return data.data;
   } catch (error) {
     console.error("Error fetching token prices:", error);
     return {};
   }
 }
+
 
 // -------------------------
 // 1. FETCH TRANSACTIONS
@@ -480,5 +485,6 @@ export {
   fetchTransactions,
   decodeTransactionData,
   initializeTable,
-  updateOtherSections
+  updateOtherSections,
+  logOnChainTxCount,
 };
