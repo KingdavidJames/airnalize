@@ -282,7 +282,6 @@ function buildTableRow(tx, index) {
 // -------------------------
 async function initializeTable(walletAddress) {
   const tableContainer = document.getElementById("tables");
-  tableContainer.innerHTML = "<p>Loading transactions...</p>";
   const transactions = await fetchTransactions(walletAddress);
   if (!transactions || transactions.length === 0) {
     tableContainer.innerHTML = "<p>No transactions found for this wallet.</p>";
@@ -471,8 +470,120 @@ async function updateOtherSections(transactions, walletAddress) {
       </p>`
     )
     .join("");
+  await updateLineChart(transactions, walletAddress);
+}
+// Helper to group transactions by day
+function groupTransactionsByDay(transactions, walletAddress) {
+  const dailyGroups = {};
+
+  transactions.forEach(tx => {
+    const date = new Date(tx.timestamp); // Convert Unix timestamp to JS Date
+    const dayKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    if (!dailyGroups[dayKey]) {
+      dailyGroups[dayKey] = {
+        date: dayKey,
+        totalUSD: 0,
+        cumulativeUSD: 0
+      };
+    }
+    const isCredit = tx.to?.hash?.toLowerCase() === walletAddress.toLowerCase();
+    const isDebit = tx.from?.hash?.toLowerCase() === walletAddress.toLowerCase();
+
+    // Process native AMB transfers
+    if (Number(tx.value) > 0) {
+      const ambAmount = parseFloat(formatAMB(tx.value));
+      const ambPrice = priceCache.data?.amber?.usd || 0;
+      const usdValue = ambAmount * ambPrice;
+      
+      if (isCredit) dailyGroups[dayKey].totalUSD += usdValue;
+      if (isDebit) dailyGroups[dayKey].totalUSD -= usdValue;
+    }
+
+    // Process ERC20 transfers
+    if (tx.method) {
+      const decoded = decodeTransactionData(tx.raw_input || "");
+      if (decoded?.methodName === "transfer") {
+        const contractAddr = tx.to?.hash?.toLowerCase();
+        const tokenInfo = knownTokens[contractAddr];
+        
+        if (tokenInfo) {
+          const amount = parseFloat(ethers.formatUnits(decoded.rawValue, tokenInfo.decimals));
+          const tokenPrice = priceCache.data?.[tokenIds[tokenInfo.symbol]]?.usd || 0;
+          const usdValue = amount * tokenPrice;
+
+          if (isCredit) dailyGroups[dayKey].totalUSD += usdValue;
+          if (isDebit) dailyGroups[dayKey].totalUSD -= usdValue;
+        }
+      }
+    }
+  });
+
+  return dailyGroups;
 }
 
+// Calculate cumulative values
+function calculateCumulativeValues(dailyGroups) {
+  const sortedDays = Object.values(dailyGroups).sort((a, b) => 
+    new Date(a.date) - new Date(b.date)
+  );
+
+  let runningTotal = 0;
+  return sortedDays.map(day => {
+    runningTotal += day.totalUSD;
+    return {
+      x: day.date,
+      y: runningTotal
+    };
+  });
+}
+
+// Update chart initialization
+async function updateLineChart(transactions, walletAddress) {
+  const prices = await getTokenPrices();
+  priceCache.data = prices; // Update cache with latest prices
+  
+  const dailyGroups = groupTransactionsByDay(transactions, walletAddress);
+  const seriesData = calculateCumulativeValues(dailyGroups);
+
+  const options = {
+    series: [{
+      name: "Portfolio Value",
+      data: seriesData
+    }],
+    chart: {
+      height: 350,
+      type: 'line',
+      zoom: { enabled: false }
+    },
+    dataLabels: { enabled: false },
+    stroke: { curve: 'smooth' },
+    title: {
+      text: 'Account Value Growth',
+      align: 'left'
+    },
+    xaxis: {
+      type: 'datetime',
+      labels: {
+        datetimeUTC: false
+      }
+    },
+    tooltip: {
+      x: {
+        format: 'dd MMM yyyy'
+      },
+      y: {
+        formatter: (value) => `$${value.toFixed(2)}`
+      }
+    }
+  };
+
+  const chartElement = document.querySelector("#idChartLine");
+  if (window.lineChart) window.lineChart.destroy();
+  
+  window.lineChart = new ApexCharts(chartElement, options);
+  window.lineChart.render();
+}
 // -------------------------
 // 6. EXAMPLE USAGE / EXPORTS
 // -------------------------

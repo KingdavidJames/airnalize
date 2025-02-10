@@ -234,7 +234,6 @@ async function handleWalletConnection() {
         // Disconnect logic
         walletAddress = null;
         localStorage.removeItem('walletAddress');
-        localStorage.removeItem('tokenPrices');
 
         // Clear intervals
         if (balancePoll) clearInterval(balancePoll);
