@@ -208,7 +208,7 @@ async function handleWalletConnection() {
             walletDisplay.textContent = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
             connectButton.textContent = "Disconnect";
 
-            walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"; // ✅ Debug address
+            // walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105"; // ✅ Debug address
 
             // Initialize table and start intervals
             initializeTable(walletAddress);

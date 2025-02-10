@@ -587,7 +587,7 @@ async function updateLineChart(transactions, walletAddress) {
 // -------------------------
 // 6. EXAMPLE USAGE / EXPORTS
 // -------------------------
-const walletAddress = "0x8861186D9513cFD5d1bEb199355448Ce5E96F105";
+const walletAddress = localStorage.getItem("walletAddress");
 initializeTable(walletAddress);
 logOnChainTxCount(walletAddress);
 
